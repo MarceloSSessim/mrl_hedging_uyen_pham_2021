@@ -107,12 +107,27 @@ class MultiAgentTradingEnv(MultiAgentEnv):
                     total_qty = self.positions[i] + 1
                     total_cost = self.cost_basis[i] * self.positions[i] + price
                     self.positions[i] += 1
-                    self.cost_basis[i] = total_cost / total_qty
-
-            elif action == 2 and self.positions[i] > 0:  # Sell
+                    if total_qty != 0:
+                        self.cost_basis[i] = total_cost / total_qty
+                    else:
+                        self.cost_basis[i] = 0.0  # ou np.nan se quiser sinalizar erro
+            elif action == 2:
+                price = prices[i]
                 revenue = price * (1 - self.transaction_fee)
-                self.cash += revenue
-                self.positions[i] = max(0, self.positions[i] - 1)
+
+                if self.asset_types[i] == 'equity':
+                    if self.positions[i] > 0:
+                        self.cash += revenue
+                        self.positions[i] = max(0, self.positions[i] - 1)
+                else:  # future
+                    self.cash += revenue
+                    self.positions[i] -= 1  # permite posição negativa
+                    total_qty = self.positions[i]
+                    if total_qty != 0:
+                        self.cost_basis[i] = total_cost / total_qty
+                    else:
+                        self.cost_basis[i] = 0.0  # ou np.nan se quiser sinalizar erro
+
 
         self.current_step += 1
         episode_ended = (

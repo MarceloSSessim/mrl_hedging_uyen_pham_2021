@@ -11,7 +11,7 @@ from ray.air.config import RunConfig, CheckpointConfig
 from ray.tune import Tuner
 from ray.rllib.algorithms.impala import ImpalaConfig
 from ray.rllib.env.wrappers.multi_agent_env_compatibility import MultiAgentEnvCompatibility
-
+from utils import policy_mapping_fn
 from env_trading import MultiAgentTradingEnv
 from model_architecture import SharedLSTMModel
 
@@ -52,9 +52,6 @@ return_path = os.path.join("data", "processed", "returns_log.csv")
 asset_types = ["equity"] * 10 + ["future"]
 abs_results_path = os.path.abspath("results")
 
-# === 5. Política compartilhada para todos os agentes ===
-def policy_mapping_fn(agent_id, episode, **kwargs):
-    return "shared_policy"
 
 # === 6. Espaços de observação e ação ===
 temp_env = create_env({
@@ -144,8 +141,8 @@ analysis = Tuner(
 ).fit()
 
 # === 9. Salva resultados ===
-with open(os.path.join("results", "impala_analysis.pkl"), "wb") as f:
-    pickle.dump(analysis, f)
+#with open(os.path.join("results", "impala_analysis.pkl"), "wb") as f:
+#    pickle.dump(analysis, f)
 
 print("✅ Treinamento finalizado.")
 
