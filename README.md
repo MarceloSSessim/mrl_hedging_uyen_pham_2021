@@ -1,6 +1,6 @@
-# Multi-Agent Reinforcement Learning for Portfolio Hedging 🇻🇳📉📈
+# Multi-Agent Reinforcement Learning for Portfolio Hedging 🇺🇸📉📈
 
-This repository contains a full replication of the paper:
+This repository contains a full replication and adaptation of the paper:
 
 > **Pham, Uyen; Luu, Quoc; Tran, Hien (2021).**  
 > *Multi-agent reinforcement learning approach for hedging portfolio problem.*  
@@ -11,16 +11,37 @@ This repository contains a full replication of the paper:
 
 ## 🎯 Project Objective
 
-The goal is to implement and reproduce the results of a **deep reinforcement learning-based hedging strategy** using a **multi-agent system** (equities + futures) trained via the **IMPALA algorithm**.  
-This project is focused on Vietnamese stock market data, simulating realistic trading conditions (transaction costs, settlement delays, mark-to-market PnL).
+The goal is to replicate and evaluate a **deep reinforcement learning-based hedging strategy** using a **multi-agent system** trained via the **IMPALA algorithm**, as proposed by Pham et al. (2021).  
+This implementation adapts the original study to use **publicly available data from the U.S. stock market**, simulating realistic trading conditions (transaction costs, settlement delays, mark-to-market PnL).
 
 ---
 
+## 💡 US Market Adaptation
+
+Instead of Vietnamese stock market data, this replication uses a portfolio composed of major U.S. equities and one index-tracking ETF as the hedging instrument:
+
+```python
+TICKERS = [
+    "AAPL",  # Apple
+    "MSFT",  # Microsoft
+    "GOOGL", # Alphabet
+    "AMZN",  # Amazon
+    "TSLA",  # Tesla
+    "NVDA",  # NVIDIA
+    "META",  # Meta Platforms (Facebook)
+    "INTC",  # Intel
+    "NFLX",  # Netflix
+    "XOM",   # Exxon Mobil
+    "SPY"    # S&P 500 ETF (used as a hedge asset)
+]
+
+```
+---
 ## 📁 Repository Structure
 
 | File / Notebook                | Description |
 |-------------------------------|-------------|
-| `data_preparation.ipynb`   | Prepares and aligns daily log-returns and prices from Ho Chi Minh (HSX) and Hanoi (HNX) stock exchanges. |
+| `data_preparation.ipynb`   |Downloads and preprocesses daily log-returns and prices for selected U.S. stocks and the SPY ETF. |
 | `env_trading.py`           | Custom `gym.Env` environment implementing realistic multi-agent trading logic, aligned with Algorithm 1 from the paper. |
 | `model_architecture.py`    | Defines a shared LSTM-based neural network architecture for the agents (policy and value heads). |
 | `train_impala.py`          | Training script using **RLlib**'s implementation of IMPALA with distributed actors and V-trace updates. |
@@ -44,7 +65,7 @@ This project is focused on Vietnamese stock market data, simulating realistic tr
 
 ### Requirements
 
-- Python 3.8+
+- Python 3.10
 - [Ray + RLlib](https://docs.ray.io/en/latest/rllib/)
 - Gym
 - NumPy, Pandas, Matplotlib

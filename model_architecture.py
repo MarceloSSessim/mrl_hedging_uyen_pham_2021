@@ -8,40 +8,36 @@ from ray.rllib.utils.framework import try_import_torch
 
 torch, nn = try_import_torch()
 
-
 class SharedLSTMModel(TorchModelV2, nn.Module):
     """
     Shared LSTM model for multi-agent trading (Pham et al., 2021).
 
     Arquitetura:
     - FC com 256 unidades + tanh
-    - LSTM com 256 unidades (sequência temporal T > 1)
-    - Heads lineares separadas: policy (logits) e value (critic)
+    - LSTM com 256 unidades
+    - Heads separadas: policy (logits) e value (critic)
     """
 
-    def __init__(self, obs_space, action_space, num_outputs, model_config, name):
+    def __init__(self, obs_space, action_space, num_outputs, model_config, name, **kwargs):
         TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config, name)
         nn.Module.__init__(self)
 
-        self.obs_size = int(np.product(obs_space.shape))  # Esperado: 3
+        self.obs_size = int(np.prod(obs_space.shape))
         self.num_outputs = num_outputs
         self.lstm_hidden_size = model_config.get("lstm_cell_size", 256)
 
-        # FC camada densa (256 unidades + tanh)
         self.fc = SlimFC(
             in_size=self.obs_size,
             out_size=256,
             activation_fn="tanh"
         )
 
-        # LSTM com batch_first=True (espera entrada como [B, T, F])
         self.lstm = nn.LSTM(
             input_size=256,
             hidden_size=self.lstm_hidden_size,
             batch_first=True
         )
 
-        # Heads separadas
         self.policy_head = SlimFC(
             in_size=self.lstm_hidden_size,
             out_size=self.num_outputs,
@@ -58,44 +54,57 @@ class SharedLSTMModel(TorchModelV2, nn.Module):
 
     @override(TorchModelV2)
     def get_initial_state(self):
-        # Inicializa estado escondido (h, c) do LSTM como zeros
-        return [
-            torch.zeros(self.lstm_hidden_size),
-            torch.zeros(self.lstm_hidden_size)
-        ]
+        h = torch.zeros(self.lstm_hidden_size, dtype=torch.float32)
+        c = torch.zeros(self.lstm_hidden_size, dtype=torch.float32)
+        return [h, c]
 
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
         """
-        Entrada: 
-        - input_dict["obs"]: (B, T, obs_size) já vem formatado pelo RLlib
-        - state: [h, c] do LSTM
-        - seq_lens: sequência válida por batch
+        Args:
+            input_dict["obs"]: Tensor de observações com shape (B, T, obs_size) ou (B, obs_size)
+            state: lista com dois tensores [h, c] representando os estados oculto e de célula da LSTM
+            seq_lens: tamanho efetivo das sequências (usado pelo RLlib)
+
+        Returns:
+            logits: ações da política (B, num_outputs)
+            new_state: lista com novos estados [h_n, c_n]
         """
-        x = input_dict["obs"].float()  # (B, T, obs_dim)
 
-        # Aplica FC frame a frame (pode aplicar em todo o tensor)
+        # --- Entrada: observação ---
+        x = input_dict["obs"].float()
+        if x.dim() == 2:
+            x = x.unsqueeze(1)  # (B, F) → (B, 1, F)
+
         B, T, _ = x.shape
+
         x = x.reshape(B * T, self.obs_size)
-        x = self.fc(x)  # (B*T, 256)
-        x = x.reshape(B, T, -1)  # (B, T, 256)
+        x = self.fc(x)
+        x = x.reshape(B, T, -1)
 
-        # Ajusta estados para shape esperado do LSTM: (1, B, H)
-        h_in = state[0].unsqueeze(0)
-        c_in = state[1].unsqueeze(0)
+        device = x.device
 
-        # LSTM processa sequência (B, T, 256)
-        lstm_out, (h_n, c_n) = self.lstm(x, (h_in, c_in))  # lstm_out: (B, T, H)
+        if len(state) == 0:
+            h_in = torch.zeros(1, B, self.lstm_hidden_size, device=device)
+            c_in = torch.zeros(1, B, self.lstm_hidden_size, device=device)
+        else:
+            h_in = state[0].unsqueeze(0).to(device)  # (1, B, H)
+            c_in = state[1].unsqueeze(0).to(device)
 
-        # Último output da sequência para cada batch
-        final_outputs = lstm_out[:, -1, :]  # (B, H)
+        lstm_out, (h_n, c_n) = self.lstm(x, (h_in, c_in))
 
-        # Heads
-        logits = self.policy_head(final_outputs)  # (B, num_outputs)
-        self._value_out = self.value_head(final_outputs).squeeze(1)  # (B,)
+        final_outputs = lstm_out[:, -1, :]
+        logits = self.policy_head(final_outputs)
+        self._value_out = self.value_head(final_outputs).squeeze(1)
 
-        return logits, [h_n.squeeze(0), c_n.squeeze(0)]
+        return logits, [
+            h_n.squeeze(0).detach().cpu(),
+            c_n.squeeze(0).detach().cpu()
+        ]
+
 
     @override(TorchModelV2)
     def value_function(self):
+        assert self._value_out is not None, "value_function called before forward pass"
         return self._value_out
+

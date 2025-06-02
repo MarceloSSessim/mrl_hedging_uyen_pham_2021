@@ -1,8 +1,9 @@
-import gym
+import gymnasium as gym
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
+from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
-class MultiAgentTradingEnv(gym.Env):
+class MultiAgentTradingEnv(MultiAgentEnv):
     """
     MultiAgentTradingEnv
 
@@ -10,9 +11,10 @@ class MultiAgentTradingEnv(gym.Env):
     Alinhado com o paper: Pham et al. (2021)
     """
 
-    metadata = {'render.modes': ['human']}
+    metadata = {'render_modes': ['human']}
 
-    def __init__(self, price_df, log_return_df, asset_types, initial_cash=1e6, transaction_fee=0.001, future_discount=0.001):
+    def __init__(self, price_df, log_return_df, asset_types,
+                 initial_cash=1e6, transaction_fee=0.001, future_discount=0.001):
         super().__init__()
 
         assert price_df.shape == log_return_df.shape, "Mismatch between price and return data"
@@ -27,19 +29,16 @@ class MultiAgentTradingEnv(gym.Env):
         self.transaction_fee = transaction_fee
         self.future_discount = future_discount
 
-        # Define one agent per asset
-        self.agent_ids = [f'agent_{i}' for i in range(self.num_assets)]
+        self.agent_ids = [f"agent_{i}" for i in range(self.num_assets)]
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
+        self.action_space = spaces.Discrete(3)
 
-        # Define observation/action spaces per agent
-        self.action_space = {agent_id: spaces.Discrete(3) for agent_id in self.agent_ids}
-        self.observation_space = {
-            agent_id: spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
-            for agent_id in self.agent_ids
-        }
+        self._reset_env_vars()
 
-        self.reset()
+    def seed(self, seed=None):
+        np.random.seed(seed)
 
-    def reset(self):
+    def _reset_env_vars(self):
         self.current_step = 0
         self.cash = self.initial_cash
         self.positions = np.zeros(self.num_assets)
@@ -47,7 +46,13 @@ class MultiAgentTradingEnv(gym.Env):
         self.pnl = np.zeros(self.num_assets)
         self.settlement_queue = [[] for _ in range(self.num_assets)]
 
-        return self._get_obs()
+    def reset(self, *, seed=None, options=None):
+        self.seed(seed)
+        self._reset_env_vars()
+
+        obs = self._get_obs()
+        infos = {agent_id: {} for agent_id in self.agent_ids}
+        return obs, infos
 
     def _get_obs(self):
         log_returns = self.returns_df.iloc[self.current_step].values
@@ -55,16 +60,23 @@ class MultiAgentTradingEnv(gym.Env):
         self.pnl = (prices - self.cost_basis) * self.positions
 
         obs = {
-            f'agent_{i}': np.array([log_returns[i], self.positions[i], self.pnl[i]])
-            for i in range(self.num_assets)
+            agent_id: np.array([
+                np.float32(log_returns[i]),
+                np.float32(self.positions[i]),
+                np.float32(self.pnl[i])
+            ], dtype=np.float32)
+            for i, agent_id in enumerate(self.agent_ids)
         }
+        for agent_id, arr in obs.items():
+            assert arr.shape == (3,), f"Obs shape errado para {agent_id}: {arr.shape}"
+
         return obs
 
     def step(self, actions):
         prices = self.price_df.iloc[self.current_step].values
         returns = self.returns_df.iloc[self.current_step].values
 
-        # Process settlements
+        # Liquidar ativos na fila T+2 (para equities)
         for i in range(self.num_assets):
             new_queue = []
             for step_due, qty, price in self.settlement_queue[i]:
@@ -80,7 +92,7 @@ class MultiAgentTradingEnv(gym.Env):
                     new_queue.append((step_due, qty, price))
             self.settlement_queue[i] = new_queue
 
-        # Process actions from each agent
+        # Processar ações dos agentes
         for i, agent_id in enumerate(self.agent_ids):
             action = actions.get(agent_id, 0)
             price = prices[i]
@@ -90,21 +102,24 @@ class MultiAgentTradingEnv(gym.Env):
                 if self.asset_types[i] == 'equity':
                     self.cash -= cost
                     self.settlement_queue[i].append((self.current_step + 2, 1, price))
-                else:  # future (T+0)
+                else:  # future
                     self.cash -= cost
                     total_qty = self.positions[i] + 1
                     total_cost = self.cost_basis[i] * self.positions[i] + price
                     self.positions[i] += 1
                     self.cost_basis[i] = total_cost / total_qty
+
             elif action == 2 and self.positions[i] > 0:  # Sell
                 revenue = price * (1 - self.transaction_fee)
                 self.cash += revenue
-                self.positions[i] -= 1
+                self.positions[i] = max(0, self.positions[i] - 1)
 
         self.current_step += 1
-        done = self.current_step >= len(self.price_df) - 1 or self.cash < 0
+        episode_ended = (
+            self.current_step >= len(self.price_df) - 1 or self.cash < 0
+        )
 
-        # Rewards por agente
+        # Recompensas
         rewards = {}
         for i, agent_id in enumerate(self.agent_ids):
             reward = returns[i] * self.positions[i]
@@ -113,13 +128,16 @@ class MultiAgentTradingEnv(gym.Env):
             rewards[agent_id] = reward
 
         obs = self._get_obs()
-        dones = {agent_id: done for agent_id in self.agent_ids}
-        dones['__all__'] = done
+        terminateds = {agent_id: episode_ended for agent_id in self.agent_ids}
+        terminateds['__all__'] = episode_ended
+
+        truncateds = {agent_id: False for agent_id in self.agent_ids}
+        truncateds['__all__'] = False
+
         infos = {agent_id: {} for agent_id in self.agent_ids}
+        return obs, rewards, terminateds, truncateds, infos
 
-        return obs, rewards, dones, infos
-
-    def render(self, mode='human'):
+    def render(self):
         prices = self.price_df.iloc[self.current_step].values
         portfolio_value = self.cash + np.dot(self.positions, prices)
         print(f'Step: {self.current_step} | Portfolio Value: {portfolio_value:.2f} | Cash: {self.cash:.2f}')

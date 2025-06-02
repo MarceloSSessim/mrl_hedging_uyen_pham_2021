@@ -1,5 +1,3 @@
-# train_impala.py
-
 import os
 import pickle
 import torch
@@ -11,8 +9,8 @@ from ray.tune.registry import register_env
 from ray.rllib.models import ModelCatalog
 from ray.air.config import RunConfig, CheckpointConfig
 from ray.tune import Tuner
-from ray.rllib.algorithms.impala import ImpalaConfig as SafeImpalaConfig
-from gym.spaces import Box, Discrete
+from ray.rllib.algorithms.impala import ImpalaConfig
+from ray.rllib.env.wrappers.multi_agent_env_compatibility import MultiAgentEnvCompatibility
 
 from env_trading import MultiAgentTradingEnv
 from model_architecture import SharedLSTMModel
@@ -31,8 +29,8 @@ def create_env(env_config):
     assert os.path.exists(env_config["price_path"]), f"Arquivo não encontrado: {env_config['price_path']}"
     assert os.path.exists(env_config["return_path"]), f"Arquivo não encontrado: {env_config['return_path']}"
 
-    price_df = pd.read_csv(env_config["price_path"], index_col=0).iloc[:100]
-    return_df = pd.read_csv(env_config["return_path"], index_col=0).iloc[:100]
+    price_df = pd.read_csv(env_config["price_path"], index_col=0).astype(np.float32).iloc[:100]
+    return_df = pd.read_csv(env_config["return_path"], index_col=0).astype(np.float32).iloc[:100]
     asset_types = env_config["asset_types"]
 
     return MultiAgentTradingEnv(
@@ -44,13 +42,16 @@ def create_env(env_config):
         future_discount=env_config.get("future_discount", 0.001),
     )
 
+   # return MultiAgentEnvCompatibility(env)
+
 register_env("MultiAgentTradingEnv-v0", create_env)
 
 # === 4. Caminhos e configurações do ambiente ===
-price_path = "./data/processed/raw_prices.csv"
-return_path = "./data/processed/returns_log.csv"
+price_path = os.path.join("data", "processed", "raw_prices.csv")
+return_path = os.path.join("data", "processed", "returns_log.csv")
 asset_types = ["equity"] * 10 + ["future"]
-abs_results_path = os.path.abspath("./results")
+abs_results_path = os.path.abspath("results")
+
 # === 5. Política compartilhada para todos os agentes ===
 def policy_mapping_fn(agent_id, episode, **kwargs):
     return "shared_policy"
@@ -61,14 +62,11 @@ temp_env = create_env({
     "return_path": return_path,
     "asset_types": asset_types,
 })
-obs_space = temp_env.observation_space["agent_0"]
-act_space = temp_env.action_space["agent_0"]
+obs_space = temp_env.observation_space
+act_space = temp_env.action_space
 
 # === 7. Configuração do IMPALA ===
-from ray.rllib.algorithms.impala import ImpalaConfig as SafeImpalaConfig
-
-# Inicialização do objeto de configuração
-config = SafeImpalaConfig()
+config = ImpalaConfig()
 
 # Configuração do ambiente
 config = config.environment(
@@ -80,7 +78,8 @@ config = config.environment(
         "initial_cash": 1e6,
         "transaction_fee": 0.001,
         "future_discount": 0.001,
-    }
+    },
+    disable_env_checking=True  # 👈 ADICIONE ISSO
 )
 
 # Configuração do backend
@@ -118,30 +117,21 @@ config = config.multi_agent(
     },
     policy_mapping_fn=policy_mapping_fn,
 )
-import inspect
-print("Antes do .model:")
-print("config:", type(config))
-print("config.model:", config.model)
-print("É função?:", inspect.isfunction(config.model) or inspect.ismethod(config.model))
-print("Definido em:", inspect.getfile(config.__class__))
 
 # Modelo customizado
 config.model["custom_model"] = "shared_lstm_model"
 config.model["custom_model_config"] = {"lstm_cell_size": 256}
 config.model["max_seq_len"] = 20
 
-
 # Parâmetro experimental
-config = config.experimental(
-    _disable_preprocessor_api=True
-)
+config = config.experimental(_disable_preprocessor_api=True)
 
 # === 8. Executa o treinamento ===
 analysis = Tuner(
     "IMPALA",
     run_config=RunConfig(
         stop={"training_iteration": 2},
-        local_dir= abs_results_path,
+        local_dir=abs_results_path,
         name="impala_trading_experiment",
         log_to_file=True,
         checkpoint_config=CheckpointConfig(
@@ -154,19 +144,23 @@ analysis = Tuner(
 ).fit()
 
 # === 9. Salva resultados ===
-with open("./results/impala_analysis.pkl", "wb") as f:
+with open(os.path.join("results", "impala_analysis.pkl"), "wb") as f:
     pickle.dump(analysis, f)
 
 print("✅ Treinamento finalizado.")
 
 # === 10. Estatísticas finais ===
 df = analysis.get_dataframe()
-print(df[["training_iteration", "episode_reward_mean", "episode_len_mean"]].tail())
+try:
+    print(df[["training_iteration", "episode_reward_mean", "episode_len_mean"]].tail())
+except KeyError:
+    print("🚫 Nenhum resultado disponível. O treinamento falhou.")
 
 # === 11. Melhor checkpoint ===
-best_checkpoint = analysis.get_best_checkpoint(
-    trial=analysis.get_best_trial(metric="episode_reward_mean", mode="max"),
-    metric="episode_reward_mean",
-    mode="max"
-)
+best_result = analysis.get_best_result()
+best_checkpoint = best_result.checkpoint
+
 print(f"🏁 Melhor checkpoint salvo em: {best_checkpoint}")
+
+# Salvar DataFrame diretamente como CSV
+df.to_csv("./results/impala_training_metrics.csv", index=False)
