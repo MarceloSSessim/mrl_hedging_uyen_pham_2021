@@ -1,9 +1,58 @@
-| File                            | Description                                                                                                                                                                                                                                                                                                                |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `01_data_preparation.ipynb`     | This notebook handles the acquisition and preprocessing of financial time series data from Vietnamese stock markets (HSX for stocks and HNX for futures). It computes daily returns for each asset, ensures data is cleaned and aligned, and prepares it in a format suitable for training a reinforcement learning agent. |
-| `02_env_trading.py`             | This Python script defines the custom multi-agent trading environment using the `gym.Env` interface. It simulates realistic trading conditions including transaction fees, T+2 and T+0 settlement rules, and portfolio mark-to-market dynamics. It implements separate agents for equity and futures trading.              |
-| `03_model_architecture.py`      | Defines the shared neural network architecture used by the IMPALA agents. This includes a combination of fully connected (dense) layers and LSTM units. The model outputs both policy logits and state value estimates, used by the actor-critic training method.                                                          |
-| `04_train_impala.py`            | Main training script that configures and launches multi-agent training using the IMPALA algorithm with RLLib. It sets up the trainer, configures the number of workers, logging, hyperparameters, and initiates distributed training.                                                                                      |
-| `05_evaluate_agent.ipynb`       | Loads a trained agent and simulates its behavior on out-of-sample data. The notebook records performance metrics, simulates long and short positions, and provides return visualizations across evaluation periods.                                                                                                        |
-| `06_experiments_analysis.ipynb` | Compares the performance of the RL-based hedging strategy against standard baselines like buy-and-hold. It visualizes cumulative returns, analyzes risk-adjusted metrics, and highlights how the agent performs during market downturns.                                                                                   |
+# Multi-Agent Reinforcement Learning for Portfolio Hedging 🇻🇳📉📈
+
+This repository contains a full replication of the paper:
+
+> **Pham, Uyen; Luu, Quoc; Tran, Hien (2021).**  
+> *Multi-agent reinforcement learning approach for hedging portfolio problem.*  
+> Published in _Soft Computing_, Springer.  
+> [DOI: 10.1007/s00500-021-05801-6](https://doi.org/10.1007/s00500-021-05801-6)
+
+---
+
+## 🎯 Project Objective
+
+The goal is to implement and reproduce the results of a **deep reinforcement learning-based hedging strategy** using a **multi-agent system** (equities + futures) trained via the **IMPALA algorithm**.  
+This project is focused on Vietnamese stock market data, simulating realistic trading conditions (transaction costs, settlement delays, mark-to-market PnL).
+
+---
+
+## 📁 Repository Structure
+
+| File / Notebook                | Description |
+|-------------------------------|-------------|
+| `data_preparation.ipynb`   | Prepares and aligns daily log-returns and prices from Ho Chi Minh (HSX) and Hanoi (HNX) stock exchanges. |
+| `env_trading.py`           | Custom `gym.Env` environment implementing realistic multi-agent trading logic, aligned with Algorithm 1 from the paper. |
+| `model_architecture.py`    | Defines a shared LSTM-based neural network architecture for the agents (policy and value heads). |
+| `train_impala.py`          | Training script using **RLlib**'s implementation of IMPALA with distributed actors and V-trace updates. |
+| `evaluate_agent.ipynb`     | Evaluates a trained agent on out-of-sample data and simulates trading behavior and return series. |
+| `experiments_analysis.ipynb` | Compares the RL hedging strategy against a buy-and-hold baseline, plotting cumulative returns and risk metrics. |
+
+---
+
+## 🧠 Key Features
+
+- ✅ Multi-agent setting: `equity_trader` and `future_hedger`
+- ✅ Realistic constraints: T+2 (equity) and T+0 (futures) settlement logic
+- ✅ Log-return based observations; raw prices used for portfolio simulation
+- ✅ Transaction fees and future hedging penalty modeled
+- ✅ Environment aligned with **Algorithm 1** of the paper
+- ✅ Compatible with **Ray + RLlib** for large-scale training (IMPALA)
+
+---
+
+## 🚀 Getting Started
+
+### Requirements
+
+- Python 3.8+
+- [Ray + RLlib](https://docs.ray.io/en/latest/rllib/)
+- Gym
+- NumPy, Pandas, Matplotlib
+- TensorFlow or PyTorch (used by RLlib backend)
+
+### Installation
+
+```bash
+pip install -r requirements.txt
+
 

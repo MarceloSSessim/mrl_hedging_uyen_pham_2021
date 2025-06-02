@@ -1,0 +1,42 @@
+# === Ambientes Virtuais ===
+.venv/
+env/
+venv/
+
+# === Arquivos temporários do Python ===
+__pycache__/
+*.py[cod]
+*.so
+
+# === Logs e arquivos de saída ===
+*.log
+*.out
+*.err
+
+# === Dados intermediários e de output ===
+*.pkl
+*.npy
+*.npz
+*.csv~
+*.tmp
+*.swp
+.DS_Store
+
+# === Resultados de experimentos ===
+results/
+checkpoints/
+ray_results/
+~/ray_results/
+
+# === Notebooks temporários ===
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# === VSCode config ===
+.vscode/
+*.code-workspace
+
+# === Arquivos do Ray e Tune ===
+log_dir/
+tune_logs/
+ray_dashboard.log

@@ -1,0 +1,8 @@
+ray[rllib]==2.9.3
+torch
+pandas
+numpy
+matplotlib
+gym
+ipykernel
+setuptools==67.7.2
