@@ -73,6 +73,11 @@ class MultiAgentTradingEnv(MultiAgentEnv):
         self.settlement_queue = [[] for _ in range(self.num_assets)]
         self.portfolio_total_history = []
         self.last_actions = [None for _ in range(self.num_assets)]
+        self.last_values = [
+            (self.cash / self.num_assets + self.positions[i] * self.price_df.iloc[0, i])
+            for i in range(self.num_assets)
+        ]
+
 
 
 
@@ -184,20 +189,23 @@ class MultiAgentTradingEnv(MultiAgentEnv):
         prices = self.price_df.iloc[self.current_step].values  # preços do timestep atual
 
         for i, agent_id in enumerate(self.agent_ids):
-            # Reward contínua: retorno da posição atual
-            reward = returns[i] * self.positions[i]
+            # Valor total atual do agente (cash proporcional + posição * preço)
+            current_value = self.cash / self.num_assets + self.positions[i] * prices[i]
+            normalized_diff = (current_value - self.last_values[i]) / self.initial_cash
+            reward = normalized_diff * 1000  # Fator de escala ajustável (ex: 10, 5, etc)
+            self.last_values[i] = current_value
+
+            diff_value = reward
+            self.last_values[i] = current_value  # atualiza valor para próxima iteração
+
 
             # Penalidade para posições longas em futuros
             if self.asset_types[i] == 'future':
                 reward -= self.future_discount * max(self.positions[i], 0)
-
-            # Penalidade leve por não operar (ajuda a sair da inércia)
-            if self.positions[i] == 0:
-                reward -= 0.001
             
             # Penaliza ação repetida (inércia)
             if hasattr(self, "last_actions") and action == self.last_actions[i]:
-                reward -= 0.0005
+                reward -= 0.005
 
             # Atualiza última ação
             self.last_actions[i] = action
@@ -206,14 +214,13 @@ class MultiAgentTradingEnv(MultiAgentEnv):
 
         # Bônus/punição terminal por desempenho individual
         alpha = 0.001
-        beta = 0.002
+        beta = 0.005
         if episode_ended:
             for i, agent_id in enumerate(self.agent_ids):
-                final_value = self.positions[i] * prices[i]
-                if final_value > 0:
-                    rewards[agent_id] += alpha * final_value
+                if diff_value > 0:
+                    rewards[agent_id] += alpha * diff_value
                 else:
-                    rewards[agent_id] -= beta * abs(final_value)
+                    rewards[agent_id] -= beta * abs(diff_value)
 
 
         obs = self._get_obs()

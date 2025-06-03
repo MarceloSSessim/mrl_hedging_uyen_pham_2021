@@ -14,7 +14,7 @@ from model_architecture import SharedLSTMModel
 from utils import policy_mapping_fn
 
 # === 1. Configurações ===
-checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_70edb_00000_0_2025-06-03_00-04-19/checkpoint_000039"
+checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_d3720_00000_0_2025-06-03_12-31-32/checkpoint_000003"
 price_path = "data/processed/raw_prices.csv"
 return_path = "data/processed/returns_log.csv"
 asset_types = ["equity"] * 10 + ["future"]
@@ -71,8 +71,8 @@ device = next(algo.get_policy("shared_policy").model.parameters()).device
 print(f"✅ Avaliação usando dispositivo: {device}")
 
 # === 5. Prepara os dados de avaliação e cria o ambiente ===
-price_df = pd.read_csv(price_path, index_col=0).astype(np.float32).iloc[501:550]
-return_df = pd.read_csv(return_path, index_col=0).astype(np.float32).iloc[501:550]
+price_df = pd.read_csv(price_path, index_col=0).astype(np.float32).iloc[501:600]
+return_df = pd.read_csv(return_path, index_col=0).astype(np.float32).iloc[501:600]
 common_columns = price_df.columns.intersection(return_df.columns)
 price_df = price_df[common_columns]
 return_df = return_df[common_columns]
@@ -95,23 +95,36 @@ portfolio_history = {agent_id: [] for agent_id in obs.keys()}
 # Debug: contadores de ações
 action_counts = {0: 0, 1: 0, 2: 0}
 
+# === Inicializa os estados LSTM ===
+policies = algo.workers.local_worker().policy_map
+agent_states = {
+    agent_id: policies[policy_mapping_fn(agent_id, None, None)].get_initial_state()
+    for agent_id in obs
+}
+
+# Loop de avaliação
 step_num = 0
+done = {"__all__": False}
+
 while not done["__all__"]:
     print(f"\n🟢 Step {step_num}")
     for agent_id in obs:
         print(f"  Obs {agent_id}: {obs[agent_id]}")
 
-    actions = {
-        agent_id: algo.compute_single_action(
-            obs[agent_id], policy_id=policy_mapping_fn(agent_id, None, None)
-        )[0]
-        for agent_id in obs
-    }
+    # Prepara inputs para compute_actions
+    actions, new_states, _ = algo.compute_actions(
+        observations={agent_id: obs[agent_id] for agent_id in obs},
+        state={agent_id: agent_states[agent_id] for agent_id in obs},
+        policy_id="shared_policy",  # Assumindo política única
+        explore=True
+    )
+
 
     print(f"  Ações tomadas: {actions}")
     for a in actions.values():
         action_counts[a] += 1
 
+    # Executa passo no ambiente
     obs, rewards, terminated, truncated, info = env.step(actions)
     done = {"__all__": terminated["__all__"] or truncated["__all__"]}
 
@@ -123,6 +136,9 @@ while not done["__all__"]:
         total_rewards[agent_id] += rewards[agent_id]
         portfolio_value = info[agent_id].get("portfolio_value", np.nan)
         portfolio_history[agent_id].append(portfolio_value)
+
+        # Atualiza o estado do agente
+        agent_states[agent_id] = new_states[agent_id]
 
     step_num += 1
 

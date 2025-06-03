@@ -13,6 +13,8 @@ from ray.rllib.algorithms.impala import ImpalaConfig
 from utils import policy_mapping_fn
 from env_trading import MultiAgentTradingEnv
 from model_architecture import SharedLSTMModel
+import json
+from pathlib import Path
 
 # ✅ 0. Verifica se há GPU disponível
 print("✅ PyTorch CUDA disponível:", torch.cuda.is_available())
@@ -92,8 +94,9 @@ config = config.resources(
 
 # Rollouts
 config = config.rollouts(
-    num_rollout_workers=3,
-    rollout_fragment_length=20
+    num_rollout_workers=6,
+    rollout_fragment_length=24,
+    num_envs_per_worker=2,
 )
 
 # Treinamento
@@ -129,13 +132,13 @@ config = config.experimental(_disable_preprocessor_api=True)
 analysis = Tuner(
     "IMPALA",
     run_config=RunConfig(
-        stop={"training_iteration": 400},
+        stop={"training_iteration": 100},
         local_dir=abs_results_path,
         name="impala_trading_experiment",
         log_to_file=True,
         checkpoint_config=CheckpointConfig(
             checkpoint_at_end=True,
-            checkpoint_frequency=10
+            checkpoint_frequency=25
         ),
         verbose=1
     ),
@@ -159,3 +162,21 @@ print(f"🏁 Melhor checkpoint salvo em: {best_checkpoint}")
 
 # ✅ 10. Salva DataFrame como CSV
 df.to_csv("./results/impala_training_metrics.csv", index=False)
+
+# ✅ 11. Append do melhor checkpoint em JSON
+checkpoint_log_path = Path("./results/best_checkpoints.json")
+
+# Carrega a lista existente (se houver)
+if checkpoint_log_path.exists():
+    with open(checkpoint_log_path, "r") as f:
+        checkpoint_list = json.load(f)
+else:
+    checkpoint_list = []
+
+# Adiciona o novo checkpoint, evitando duplicatas
+if best_checkpoint not in checkpoint_list:
+    checkpoint_list.append(best_checkpoint)
+
+# Salva novamente
+with open(checkpoint_log_path, "w") as f:
+    json.dump(checkpoint_list, f, indent=2)
