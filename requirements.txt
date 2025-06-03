@@ -1,7 +1,7 @@
 ray[rllib]==2.9.3
 torch
 pandas
-numpy
+numpy==1.26.4
 matplotlib
 gym
 ipykernel

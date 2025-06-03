@@ -10,30 +10,29 @@ from ray.rllib.models import ModelCatalog
 from ray.air.config import RunConfig, CheckpointConfig
 from ray.tune import Tuner
 from ray.rllib.algorithms.impala import ImpalaConfig
-from ray.rllib.env.wrappers.multi_agent_env_compatibility import MultiAgentEnvCompatibility
 from utils import policy_mapping_fn
 from env_trading import MultiAgentTradingEnv
 from model_architecture import SharedLSTMModel
 
-# === 0. Verifica se há GPU disponível ===
+# ✅ 0. Verifica se há GPU disponível
 print("✅ PyTorch CUDA disponível:", torch.cuda.is_available())
 
-# === 1. Inicializa Ray ===
+# ✅ 1. Inicializa Ray
 ray.init(ignore_reinit_error=True)
 
-# === 2. Registra modelo customizado ===
+# ✅ 2. Registra o modelo customizado
 ModelCatalog.register_custom_model("shared_lstm_model", SharedLSTMModel)
 
-# === 3. Define e registra ambiente customizado ===
+# ✅ 3. Define e registra o ambiente customizado
 def create_env(env_config):
     assert os.path.exists(env_config["price_path"]), f"Arquivo não encontrado: {env_config['price_path']}"
     assert os.path.exists(env_config["return_path"]), f"Arquivo não encontrado: {env_config['return_path']}"
 
-    price_df = pd.read_csv(env_config["price_path"], index_col=0).astype(np.float32).iloc[:100]
-    return_df = pd.read_csv(env_config["return_path"], index_col=0).astype(np.float32).iloc[:100]
+    price_df = pd.read_csv(env_config["price_path"], index_col=0).astype(np.float32).iloc[:500]
+    return_df = pd.read_csv(env_config["return_path"], index_col=0).astype(np.float32).iloc[:500]
     asset_types = env_config["asset_types"]
 
-    return MultiAgentTradingEnv(
+    env = MultiAgentTradingEnv(
         price_df=price_df,
         log_return_df=return_df,
         asset_types=asset_types,
@@ -42,30 +41,33 @@ def create_env(env_config):
         future_discount=env_config.get("future_discount", 0.001),
     )
 
-   # return MultiAgentEnvCompatibility(env)
+    # Adiciona os atributos exigidos pelo RLlib
+    env.observation_spaces = {agent_id: env.single_obs_space for agent_id in env.agent_ids}
+    env.action_spaces = {agent_id: env.single_act_space for agent_id in env.agent_ids}
+
+    return env
 
 register_env("MultiAgentTradingEnv-v0", create_env)
 
-# === 4. Caminhos e configurações do ambiente ===
+# ✅ 4. Caminhos e configurações do ambiente
 price_path = os.path.join("data", "processed", "raw_prices.csv")
 return_path = os.path.join("data", "processed", "returns_log.csv")
 asset_types = ["equity"] * 10 + ["future"]
 abs_results_path = os.path.abspath("results")
 
-
-# === 6. Espaços de observação e ação ===
+# ✅ 5. Obtém espaços do ambiente temporário para registrar shared_policy
 temp_env = create_env({
     "price_path": price_path,
     "return_path": return_path,
     "asset_types": asset_types,
 })
-obs_space = temp_env.observation_space
-act_space = temp_env.action_space
+obs_space = temp_env.single_obs_space
+act_space = temp_env.single_act_space
 
-# === 7. Configuração do IMPALA ===
+# ✅ 6. Configuração do algoritmo IMPALA
 config = ImpalaConfig()
 
-# Configuração do ambiente
+# Ambiente
 config = config.environment(
     env="MultiAgentTradingEnv-v0",
     env_config={
@@ -76,10 +78,10 @@ config = config.environment(
         "transaction_fee": 0.001,
         "future_discount": 0.001,
     },
-    disable_env_checking=True  # 👈 ADICIONE ISSO
+    disable_env_checking=True
 )
 
-# Configuração do backend
+# Backend
 config = config.framework("torch")
 
 # Recursos
@@ -90,7 +92,7 @@ config = config.resources(
 
 # Rollouts
 config = config.rollouts(
-    num_rollout_workers=6,
+    num_rollout_workers=3,
     rollout_fragment_length=20
 )
 
@@ -118,16 +120,16 @@ config = config.multi_agent(
 # Modelo customizado
 config.model["custom_model"] = "shared_lstm_model"
 config.model["custom_model_config"] = {"lstm_cell_size": 256}
-config.model["max_seq_len"] = 20
+config.model["max_seq_len"] = 12
 
-# Parâmetro experimental
+# Param experimental
 config = config.experimental(_disable_preprocessor_api=True)
 
-# === 8. Executa o treinamento ===
+# ✅ 7. Executa o treinamento
 analysis = Tuner(
     "IMPALA",
     run_config=RunConfig(
-        stop={"training_iteration": 2},
+        stop={"training_iteration": 400},
         local_dir=abs_results_path,
         name="impala_trading_experiment",
         log_to_file=True,
@@ -140,24 +142,20 @@ analysis = Tuner(
     param_space=config,
 ).fit()
 
-# === 9. Salva resultados ===
-#with open(os.path.join("results", "impala_analysis.pkl"), "wb") as f:
-#    pickle.dump(analysis, f)
-
 print("✅ Treinamento finalizado.")
 
-# === 10. Estatísticas finais ===
+# ✅ 8. Estatísticas finais
 df = analysis.get_dataframe()
 try:
     print(df[["training_iteration", "episode_reward_mean", "episode_len_mean"]].tail())
 except KeyError:
     print("🚫 Nenhum resultado disponível. O treinamento falhou.")
 
-# === 11. Melhor checkpoint ===
+# ✅ 9. Melhor checkpoint
 best_result = analysis.get_best_result()
 best_checkpoint = best_result.checkpoint
 
 print(f"🏁 Melhor checkpoint salvo em: {best_checkpoint}")
 
-# Salvar DataFrame diretamente como CSV
+# ✅ 10. Salva DataFrame como CSV
 df.to_csv("./results/impala_training_metrics.csv", index=False)
