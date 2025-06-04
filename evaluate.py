@@ -14,7 +14,7 @@ from model_architecture import SharedLSTMModel
 from utils import policy_mapping_fn
 
 # === 1. Configurações ===
-checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_d3720_00000_0_2025-06-03_12-31-32/checkpoint_000003"
+checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_702a1_00000_0_2025-06-04_11-44-37/checkpoint_000003"
 price_path = "data/processed/raw_prices.csv"
 return_path = "data/processed/returns_log.csv"
 asset_types = ["equity"] * 10 + ["future"]

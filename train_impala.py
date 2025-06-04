@@ -89,22 +89,22 @@ config = config.framework("torch")
 # Recursos
 config = config.resources(
     num_gpus=1,
-    num_cpus_per_worker=1
+    num_cpus_per_worker=2.5
 )
 
 # Rollouts
 config = config.rollouts(
     num_rollout_workers=6,
-    rollout_fragment_length=24,
-    num_envs_per_worker=2,
+    rollout_fragment_length=36,
+    num_envs_per_worker=1,
 )
 
 # Treinamento
 config = config.training(
     lr=3e-4,
-    train_batch_size=1280,
+    train_batch_size=1008,
     vf_loss_coeff=0.5,
-    entropy_coeff=0.01,
+    entropy_coeff=0.02,
 )
 
 # Multi-agente
@@ -163,7 +163,7 @@ print(f"🏁 Melhor checkpoint salvo em: {best_checkpoint}")
 # ✅ 10. Salva DataFrame como CSV
 df.to_csv("./results/impala_training_metrics.csv", index=False)
 
-# ✅ 11. Append do melhor checkpoint em JSON
+# ✅ 11. Append do melhor checkpoint em JSON (usando path string)
 checkpoint_log_path = Path("./results/best_checkpoints.json")
 
 # Carrega a lista existente (se houver)
@@ -173,10 +173,36 @@ if checkpoint_log_path.exists():
 else:
     checkpoint_list = []
 
-# Adiciona o novo checkpoint, evitando duplicatas
-if best_checkpoint not in checkpoint_list:
-    checkpoint_list.append(best_checkpoint)
+# Extrai o caminho do checkpoint
+checkpoint_path_str = str(best_checkpoint.path)
 
-# Salva novamente
+# Adiciona o novo caminho, evitando duplicatas
+if checkpoint_path_str not in checkpoint_list:
+    checkpoint_list.append(checkpoint_path_str)
+
+# Salva novamente como JSON
 with open(checkpoint_log_path, "w") as f:
     json.dump(checkpoint_list, f, indent=2)
+
+
+# ✅ 12. Entropia da política (shared_policy)
+import matplotlib.pyplot as plt
+
+entropy_col = "info/learner/shared_policy/learner_stats/entropy"
+
+if entropy_col in df.columns:
+    print("\n📈 Últimos valores de entropia da política compartilhada:")
+    print(df[["training_iteration", entropy_col]].tail())
+
+    # Plota gráfico da entropia ao longo do tempo
+    plt.figure(figsize=(8, 4))
+    plt.plot(df["training_iteration"], df[entropy_col])
+    plt.title("Entropia da política compartilhada durante o treinamento")
+    plt.xlabel("Iteração")
+    plt.ylabel("Entropia")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("./results/policy_entropy_plot.png")  # salva como imagem
+    plt.show()
+else:
+    print("🚫 Coluna de entropia da política compartilhada não encontrada.")

@@ -67,7 +67,7 @@ class MultiAgentTradingEnv(MultiAgentEnv):
     def _reset_env_vars(self):
         self.current_step = 0
         self.cash = self.initial_cash
-        self.positions = np.random.randint(0, 2, size=self.num_assets)  # -1, 0 ou 1
+        self.positions = np.zeros(self.num_assets, dtype=np.int32)  # todos começam com 0
         self.cost_basis = np.zeros(self.num_assets)
         self.pnl = np.zeros(self.num_assets)
         self.settlement_queue = [[] for _ in range(self.num_assets)]
@@ -183,44 +183,25 @@ class MultiAgentTradingEnv(MultiAgentEnv):
             self.current_step >= len(self.price_df) - 1 or self.cash < 0
         )
 
-        # Recompensas
-        # Recompensas
-        rewards = {}
-        prices = self.price_df.iloc[self.current_step].values  # preços do timestep atual
+        # ==== Team reward ====
+        team_current_value = 0.0
+        prev_value = sum(self.last_values)
+        team_current_value = sum([
+            self.cash / self.num_assets + self.positions[i] * prices[i]
+            for i in range(self.num_assets)
+        ])
+
+        if prev_value > 0 and team_current_value > 0:
+            team_reward = np.log(team_current_value / prev_value)
+        else:
+            team_reward = -1.0  # ou 0.0, penalização segura
 
         for i, agent_id in enumerate(self.agent_ids):
-            # Valor total atual do agente (cash proporcional + posição * preço)
-            current_value = self.cash / self.num_assets + self.positions[i] * prices[i]
-            normalized_diff = (current_value - self.last_values[i]) / self.initial_cash
-            reward = normalized_diff * 1000  # Fator de escala ajustável (ex: 10, 5, etc)
-            self.last_values[i] = current_value
-
-            diff_value = reward
-            self.last_values[i] = current_value  # atualiza valor para próxima iteração
-
-
-            # Penalidade para posições longas em futuros
-            if self.asset_types[i] == 'future':
-                reward -= self.future_discount * max(self.positions[i], 0)
-            
-            # Penaliza ação repetida (inércia)
-            if hasattr(self, "last_actions") and action == self.last_actions[i]:
-                reward -= 0.005
-
-            # Atualiza última ação
+            action = actions.get(agent_id, 0)
+            if action == self.last_actions[i]:
+                team_reward -= 0.0005  # penalidade leve por repetir ação
             self.last_actions[i] = action
-
-            rewards[agent_id] = reward
-
-        # Bônus/punição terminal por desempenho individual
-        alpha = 0.001
-        beta = 0.005
-        if episode_ended:
-            for i, agent_id in enumerate(self.agent_ids):
-                if diff_value > 0:
-                    rewards[agent_id] += alpha * diff_value
-                else:
-                    rewards[agent_id] -= beta * abs(diff_value)
+        rewards = {agent_id: team_reward for agent_id in self.agent_ids}
 
 
         obs = self._get_obs()
