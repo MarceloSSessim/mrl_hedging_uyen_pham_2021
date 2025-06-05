@@ -14,7 +14,7 @@ class MultiAgentTradingEnv(MultiAgentEnv):
     metadata = {'render_modes': ['human']}
 
     def __init__(self, price_df, log_return_df, asset_types,
-                 initial_cash=1e6, transaction_fee=0.001, future_discount=0.001):
+                 initial_cash=500000, transaction_fee=0.001, future_discount=0.001):
         super().__init__()
 
         assert price_df.shape == log_return_df.shape, "Mismatch between price and return data"
@@ -199,7 +199,7 @@ class MultiAgentTradingEnv(MultiAgentEnv):
         for i, agent_id in enumerate(self.agent_ids):
             action = actions.get(agent_id, 0)
             if action == self.last_actions[i]:
-                team_reward -= 0.0005  # penalidade leve por repetir ação
+                team_reward -= 0.005  # penalidade leve por repetir ação
             self.last_actions[i] = action
         rewards = {agent_id: team_reward for agent_id in self.agent_ids}
 

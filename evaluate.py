@@ -14,7 +14,7 @@ from model_architecture import SharedLSTMModel
 from utils import policy_mapping_fn
 
 # === 1. Configurações ===
-checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_702a1_00000_0_2025-06-04_11-44-37/checkpoint_000003"
+checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_c0d27_00000_0_2025-06-04_22-09-38/checkpoint_000001"
 price_path = "data/processed/raw_prices.csv"
 return_path = "data/processed/returns_log.csv"
 asset_types = ["equity"] * 10 + ["future"]
@@ -25,8 +25,9 @@ os.makedirs(output_dir, exist_ok=True)
 ModelCatalog.register_custom_model("shared_lstm_model", SharedLSTMModel)
 
 def create_env(env_config):
-    price_df = pd.read_csv(env_config["price_path"], index_col=0).astype(np.float32).iloc[501:550]
-    return_df = pd.read_csv(env_config["return_path"], index_col=0).astype(np.float32).iloc[501:550]
+    price_df = pd.read_csv(env_config["price_path"], index_col=0).astype(np.float32).iloc[501:667]
+    dates = price_df.index[1:].to_list()  # Pula a linha do reset (t=0, sem step)
+    return_df = pd.read_csv(env_config["return_path"], index_col=0).astype(np.float32).iloc[501:667]
     common_columns = price_df.columns.intersection(return_df.columns)
     price_df = price_df[common_columns]
     return_df = return_df[common_columns]
@@ -54,7 +55,7 @@ config = (
             "price_path": price_path,
             "return_path": return_path,
             "asset_types": asset_types,
-            "initial_cash": 1e6,
+            "initial_cash": 200000,
             "transaction_fee": 0.001,
             "future_discount": 0.001,
         }
@@ -71,8 +72,9 @@ device = next(algo.get_policy("shared_policy").model.parameters()).device
 print(f"✅ Avaliação usando dispositivo: {device}")
 
 # === 5. Prepara os dados de avaliação e cria o ambiente ===
-price_df = pd.read_csv(price_path, index_col=0).astype(np.float32).iloc[501:600]
-return_df = pd.read_csv(return_path, index_col=0).astype(np.float32).iloc[501:600]
+price_df = pd.read_csv(price_path, index_col=0).astype(np.float32).iloc[501:668]
+dates = price_df.index[1:].to_list()  # Pula a linha do reset (t=0, sem step)
+return_df = pd.read_csv(return_path, index_col=0).astype(np.float32).iloc[501:668]
 common_columns = price_df.columns.intersection(return_df.columns)
 price_df = price_df[common_columns]
 return_df = return_df[common_columns]
@@ -81,7 +83,7 @@ env = MultiAgentTradingEnv(
     price_df=price_df,
     log_return_df=return_df,
     asset_types=asset_types,
-    initial_cash=1e6,
+    initial_cash=200000,
     transaction_fee=0.001,
     future_discount=0.001,
 )
@@ -91,7 +93,8 @@ obs, _ = env.reset()
 done = {"__all__": False}
 total_rewards = {agent_id: 0 for agent_id in obs.keys()}
 portfolio_history = {agent_id: [] for agent_id in obs.keys()}
-
+position_value_history = {agent_id: [] for agent_id in obs.keys()}
+asset_names = price_df.columns.tolist()
 # Debug: contadores de ações
 action_counts = {0: 0, 1: 0, 2: 0}
 
@@ -126,6 +129,13 @@ while not done["__all__"]:
 
     # Executa passo no ambiente
     obs, rewards, terminated, truncated, info = env.step(actions)
+    current_prices = env.price_df.iloc[env.current_step].values
+    for i, agent_id in enumerate(env.agent_ids):
+        position = env.positions[i]
+        price = current_prices[i]
+        position_value = position * price
+        position_value_history[agent_id].append(position_value)
+
     done = {"__all__": terminated["__all__"] or truncated["__all__"]}
 
     print(f"  Recompensas: {rewards}")
@@ -204,7 +214,7 @@ print(f"\n📁 Resultados salvos em: {results_csv_path}")
 
 # Salva CSV da série temporal do portfólio total
 total_df = pd.DataFrame({
-    "time_step": list(range(len(total_values))),
+    "date": dates[:len(total_values)],
     "portfolio_total": total_values
 })
 total_series_path = os.path.join(output_dir, "portfolio_total_series.csv")
@@ -236,3 +246,10 @@ plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir, "portfolio_total.png"))
 print(f"📊 Gráfico do portfólio total salvo em {output_dir}/portfolio_total.png")
+
+# === Salva CSV com position * price ===
+position_value_df = pd.DataFrame(position_value_history)
+position_value_df.insert(0, "date", dates[:len(position_value_df)])
+position_value_path = os.path.join(output_dir, "position_value_series.csv")
+position_value_df.to_csv(position_value_path, index=False)
+print(f"📁 Série temporal do position * price salva em: {position_value_path}")

@@ -38,7 +38,7 @@ def create_env(env_config):
         price_df=price_df,
         log_return_df=return_df,
         asset_types=asset_types,
-        initial_cash=env_config.get("initial_cash", 1e6),
+        initial_cash=env_config.get("initial_cash", 500000),
         transaction_fee=env_config.get("transaction_fee", 0.001),
         future_discount=env_config.get("future_discount", 0.001),
     )
@@ -76,7 +76,7 @@ config = config.environment(
         "price_path": price_path,
         "return_path": return_path,
         "asset_types": asset_types,
-        "initial_cash": 1e6,
+        "initial_cash": 500000,
         "transaction_fee": 0.001,
         "future_discount": 0.001,
     },
@@ -89,14 +89,14 @@ config = config.framework("torch")
 # Recursos
 config = config.resources(
     num_gpus=1,
-    num_cpus_per_worker=2.5
+    num_cpus_per_worker=3
 )
 
 # Rollouts
 config = config.rollouts(
     num_rollout_workers=6,
     rollout_fragment_length=36,
-    num_envs_per_worker=1,
+    num_envs_per_worker=2,
 )
 
 # Treinamento
