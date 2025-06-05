@@ -14,7 +14,7 @@ from model_architecture import SharedLSTMModel
 from utils import policy_mapping_fn
 
 # === 1. Configurações ===
-checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_c0d27_00000_0_2025-06-04_22-09-38/checkpoint_000001"
+checkpoint_path = "results/impala_trading_experiment/IMPALA_MultiAgentTradingEnv-v0_9e114_00000_0_2025-06-04_22-22-59/checkpoint_000003"
 price_path = "data/processed/raw_prices.csv"
 return_path = "data/processed/returns_log.csv"
 asset_types = ["equity"] * 10 + ["future"]
@@ -55,7 +55,7 @@ config = (
             "price_path": price_path,
             "return_path": return_path,
             "asset_types": asset_types,
-            "initial_cash": 200000,
+            "initial_cash": 500000,
             "transaction_fee": 0.001,
             "future_discount": 0.001,
         }
@@ -83,7 +83,7 @@ env = MultiAgentTradingEnv(
     price_df=price_df,
     log_return_df=return_df,
     asset_types=asset_types,
-    initial_cash=200000,
+    initial_cash=500000,
     transaction_fee=0.001,
     future_discount=0.001,
 )

@@ -102,7 +102,7 @@ config = config.rollouts(
 # Treinamento
 config = config.training(
     lr=3e-4,
-    train_batch_size=1008,
+    train_batch_size=1296,
     vf_loss_coeff=0.5,
     entropy_coeff=0.02,
 )
@@ -132,7 +132,7 @@ config = config.experimental(_disable_preprocessor_api=True)
 analysis = Tuner(
     "IMPALA",
     run_config=RunConfig(
-        stop={"training_iteration": 100},
+        stop={"training_iteration": 900},
         local_dir=abs_results_path,
         name="impala_trading_experiment",
         log_to_file=True,
